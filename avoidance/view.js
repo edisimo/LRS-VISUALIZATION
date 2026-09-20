@@ -5,10 +5,14 @@ export function render(ctx){let {scene:s,data:d,mode,t,params,metric,note}=ctx;c
  if(mode==='D* Lite replanning'){renderDstar(ctx);return;}
  if(av.local?.[mode]){
   let c=av.local[mode],i=Math.min(c.frames.length-1,Math.floor(t*c.frames.length)),f=c.frames[i];s.environment(d,.5);s.box(...av.obstacle,C.dynamic,.7);s.path(d.trajectory.pruned,C.initial,.018);s.path(c.actual.slice(0,t===1?c.actual.length:i+1),'white',.025);const current=t===1?c.actual.at(-1):f.position;s.drone(current);
-  if(mode==='Potential field'){for(let [v,color] of [[f.attraction,C.path],[f.repulsion,C.dynamic],[f.control,C.frontier]]){s.path([f.position,f.position.map((x,k)=>x+v[k])],color,.04);}}
+  if(mode==='Potential field'){for(let [v,color] of [[f.attraction,C.path],[f.repulsion,C.dynamic],[f.escape,C.initial],[f.control,C.frontier]]){s.path([f.position,f.position.map((x,k)=>x+v[k])],color,.04);}}
   else {f.rollouts.forEach((q,j)=>s.line([f.position,...q],f.bad[j]?C.dynamic:C.visited,.4));s.path(f.prediction,C.path,.05);}
-  if(mode==='VFH')ctx.plot(f.histogram,0,'Blocked angular sectors (0 = open, 1 = blocked)',C.inflated);
-  metric('Control step',i+1+' / '+c.frames.length);metric('State',t===1?(c.reached?'Goal reached':'Goal not reached'):f.state);metric('Goal distance',Math.hypot(...current.map((v,k)=>v-d.goal[k])).toFixed(2)+' m');metric('Motion model',['VFH','Bug2'].includes(mode)?'Fixed altitude · 2D':'3D velocity');note(mode==='Potential field'?'Same rack scene; goal attraction + obstacle repulsion. Local minima can stall this method; no hidden global detour or forced failure layout.':mode==='Bug2'?'Bug2-inspired finite-step boundary following in the horizontal plane. It has no general 3D completeness guarantee.':mode==='VFH'?'Binary polar-histogram illustration, not full VFH+. Horizontal sensing misses vertical routes and may oscillate.':'DWA-inspired acceleration-reachable 3D velocity window. Rollouts must allow braking; local minima remain possible.');return;
+  if(mode==='Bug 3D')s.sphere(f.route_target,.13,C.initial,.85);
+  s.sphere(f.target,.1,C.frontier,.8);
+  if(mode==='VFH 3D')ctx.histogram(f.histogram,24,13,f.chosen_sector);
+  metric('Control step',i+1+' / '+c.frames.length);metric('State',t===1?(c.reached?'Goal reached':'Goal not reached'):f.state);metric('Goal distance',Math.hypot(...current.map((v,k)=>v-d.goal[k])).toFixed(2)+' m');metric('Altitude',current[2].toFixed(2)+' m');metric('Motion model','XYZ · 3D');metric('Guidance','Original global route');
+  if(f.candidate_count)metric('Candidates / sectors',f.candidate_count);
+  note(mode==='Potential field'?'Augmented 3D potential field: green attraction, coral repulsion, purple tangential escape, yellow command. Original-route target is yellow; the route is not replanned.':mode==='Bug 3D'?'Follow nearby global-route points in order; detour around an obstruction, then rejoin the first clear point beyond it. Purple = route target; yellow = active tracking or boundary target. This Bug-inspired adaptation has no general completeness guarantee.':mode==='VFH 3D'?'3D histogram: 24 azimuth × 13 elevation bins. Red sectors blocked, green free, white selected. Angular persistence reduces oscillation; no global detour is computed.':'3D DWA: reachable velocity window, 1.5 s rollouts and braking check. Original-route tracking replaces the previous straight-to-goal objective.');return;
  }
  s.environment(d,.5);s.path(d.trajectory.pruned,C.initial,.025);
  if(mode==='A* replanning'){

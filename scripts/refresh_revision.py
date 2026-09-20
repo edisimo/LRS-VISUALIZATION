@@ -13,8 +13,8 @@ def refresh(data):
     data['planners']['PRM']=prm();print('PRM ready',flush=True)
     data['planners']['D* Lite']=dstar_lite(data['avoidance']['obstacle']);print('D* Lite ready',flush=True)
     data['trajectory']['stomp']=stomp(data['trajectory']['raw']);print('STOMP ready',flush=True)
-    data['avoidance']['local']=local_methods(data['avoidance']['obstacle']);print('Local methods ready',flush=True)
-    data['version']=2
+    data['avoidance']['local']=local_methods(data['avoidance']['obstacle'],data['trajectory']['pruned']);print('Local methods ready',flush=True)
+    data['version']=3
     return data
 
 if __name__=='__main__':dump(ROOT/'precomputed/lecture.json',refresh(json.loads((ROOT/'precomputed/lecture.json').read_text())))

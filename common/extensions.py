@@ -106,55 +106,5 @@ def stomp(path):
     return history
 
 
-def local_methods(obstacle):
-    """Reactive methods share the original start, goal, racks and unknown load.
-    Bug/VFH are explicit horizontal-plane adaptations; DWA uses 3D velocities.
-    Failures/stalls are reported as outcomes, never replaced with planned routes.
-    """
-    boxes=np.concatenate((BOXES,[obstacle]));result={};dt=.15
-    angles=np.arange(72)*2*np.pi/72;directions=np.c_[np.cos(angles),np.sin(angles),np.zeros(72)]
-    for mode in ['Potential field','DWA','VFH','Bug2']:
-        p=START.copy();v=np.zeros(3);frames=[];actual=[p.copy()];wall=False;hit_distance=0.;wall_steps=0
-        for step in range(220):
-            goal=GOAL-p;norm=np.linalg.norm(goal);attraction=goal/max(norm,1)*1.;repulsion=np.zeros(3)
-            for lo,hi in boxes:
-                delta=p-np.clip(p,lo,hi);dist=np.linalg.norm(delta)
-                if .001<dist<1.3:repulsion+=.24*(1/dist-1/1.3)/dist**2*delta/dist
-            candidates=[];bad=[];histogram=[];state='Seeking goal'
-            if mode=='Potential field':command=attraction+repulsion
-            elif mode=='DWA':
-                candidates=np.array([np.clip(v+np.array(o)*.22,-1.2,1.2) for o in itertools.product([-1,0,1],repeat=3)])
-                # Reachable velocities + rollout + braking-distance admissibility.
-                costs=[];rollouts=[]
-                for u in candidates:
-                    future=p+np.arange(1,9)[:,None]*dt*u;brake=p+u*(1.2+np.linalg.norm(u)/(2*1.5))
-                    safe=visible(p,brake,boxes);bad.append(not safe);rollouts.append(future)
-                    costs.append(np.linalg.norm(future[-1]-GOAL)+.12/(max(.05,float(clearance(future,boxes).min()))) if safe else 1e6)
-                command=candidates[int(np.argmin(costs))] if min(costs)<1e6 else np.zeros(3);candidates=rollouts
-            elif mode=='VFH':
-                # Binary angular histogram: ray clearance thresholded into blocked sectors.
-                for direction in directions:histogram.append(0 if visible(p,p+direction*1.2,boxes) else 1)
-                scores=[np.dot(direction,attraction) if not blocked else -100 for direction,blocked in zip(directions,histogram)]
-                command=directions[int(np.argmax(scores))]*.8 if max(scores)>-100 else np.zeros(3)
-                candidates=[np.array([p,p+direction*1.2]) for direction in directions];bad=[bool(v) for v in histogram];state='Select free angular valley'
-            else:
-                # Bug2: seek goal along the start-goal line; follow obstacle tangent on contact;
-                # leave only at a closer re-intersection with the m-line.
-                forward=attraction.copy();forward[2]=0
-                if not wall and not visible(p,p+forward*.4,boxes):wall=True;hit_distance=norm;wall_steps=0
-                if wall:
-                    wall_steps+=1;nearest=min(boxes,key=lambda b:np.linalg.norm(p-np.clip(p,*b)))
-                    normal=p-np.clip(p,*nearest);normal[2]=0;dist=np.linalg.norm(normal);normal/=max(dist,1e-9)
-                    tangent=np.array([-normal[1],normal[0],0]);command=.65*tangent+normal*(.5-dist)*2
-                    axis=GOAL-START;offset=p-START
-                    mline=(axis[0]*offset[1]-axis[1]*offset[0])/np.linalg.norm(axis[:2])
-                    if abs(mline)<.12 and norm<hit_distance-.4 and wall_steps>12 and visible(p,p+forward*.5,boxes):wall=False
-                    state='Follow boundary' if wall else 'Leave at closer m-line crossing'
-                else:command=forward
-            command=command/max(1,np.linalg.norm(command));nxt=p+dt*command
-            if not visible(p,nxt,boxes):command=np.zeros(3);nxt=p.copy();state='Safety stop'
-            frames.append(dict(position=p.copy(),prediction=np.array([p,nxt]),rollouts=candidates,bad=bad,attraction=attraction,repulsion=repulsion,control=command,state=state,histogram=histogram))
-            p=nxt;v=command;actual.append(p.copy())
-            if np.linalg.norm(p-GOAL)<.25:break
-        result[mode]=dict(frames=frames,actual=actual,dt=dt,reached=bool(np.linalg.norm(p-GOAL)<.25),final_distance=float(np.linalg.norm(p-GOAL)))
-    return result
+
+from common.local_control import local_methods

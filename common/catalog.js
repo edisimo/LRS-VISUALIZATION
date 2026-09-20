@@ -7,7 +7,7 @@ export const topics={
  'Octree':['Storage · one parent → eight children','Refine cells near surface samples. Increasing depth gives smaller leaves; empty regions remain coarse.'],
  'Triangle mesh':['Geometry · vertices + triangle faces','Connected triangles describe surfaces directly. Here the rack envelopes become closed meshes, without allocating a volume of cells.'],
  'Elevation map':['Geometry · z = h(x, y)','One maximum observed height per XY column. Compact 2.5D storage loses stacked surfaces and free space under shelves: a limitation for indoor UAVs.'],
- 'Inflation':['Collision space · n = ceil((r + margin) / Δ)','Only obstacles grow. Compare drone size with voxel width and count the extra forbidden cell layers, or inspect adaptive octree leaves.'],
+ 'Inflation':['Collision space · n = ceil((r + margin) / Δ)','Whole-volume inflation surrounds every rack by default. Switch to a slice to count cell layers, or inspect adaptive octree leaves.'],
  'Occupancy':['1 / Is this cell occupied?','A yes/no value at each location. Coral means obstacle; green means known free. Click a location, then switch to Costmap or ESDF to inspect that same cell.'],
  'Costmap':['2 / How costly is this cell?','Free locations need not be equally desirable. C = 100 exp(−max(d,0)/falloff): nearby obstacles raise the penalty, even outside occupied space.'],
  'ESDF':['3 / How far is the nearest surface?','Store signed distance in metres, not a yes/no label or arbitrary penalty. Click to reveal a ruler from the selected cell to its nearest rack surface.']}},
@@ -34,10 +34,10 @@ export const topics={
  avoidance:{label:'Local avoidance',eyebrow:'04 / REACT TO CHANGE',intro:'The same racks, start, goal and newly detected obstacle.',modes:{
  'A* replanning':['Changed map → fresh A* search','Inflate the new obstacle and search again. The UAV waits while the global route is replaced.'],
  'D* Lite replanning':['Changed edges → repair g ≠ rhs','Keep the previous search state and propagate only the necessary consistency updates. This is incremental global replanning, not a reactive controller.'],
- 'Potential field':['v ∝ −∇(Uattractive + Urepulsive)','Attraction and repulsion act in the same rack scene as the other methods. Local minima and oscillation are possible; the observed outcome is shown.'],
- 'Bug2':['Seek goal → follow boundary → rejoin m-line','Classic 2D logic at fixed altitude: leave an obstacle at a closer crossing of the start–goal line. A teaching adaptation, not a full 3D flight planner.'],
- 'DWA':['v ∈ reachable window; reject unsafe braking trajectories','Sample acceleration-reachable 3D velocities, predict short rollouts, check stopping clearance, then score goal progress. A holonomic UAV adaptation of DWA.'],
- 'VFH':['Polar histogram → free sector → steering direction','Threshold local obstacle directions and steer through an open angular valley. This fixed-altitude binary VFH illustration cannot exploit vertical escape.'],
+ 'Potential field':['v ∝ Ftrack + Frepel + Ftangent','An augmented 3D field tracks the original route. A tangential escape term guides motion around a blocking surface instead of stopping where attraction and repulsion cancel.'],
+ 'Bug 3D':['Follow route → boundary detour → rejoin route','Track the next nearby point on the original global path. If blocked, sample inflated obstacle faces in XYZ and return to the first clear route point beyond the obstruction. No replacement global planner.'],
+ 'DWA':['min J(v), v ∈ reachable 3D velocity window','Track the original global route using acceleration-limited XYZ velocity samples. Score short predictions and reject any command without a collision-free braking tail.'],
+ 'VFH 3D':['H(azimuth, elevation) → free sector → steering','Choose among spherical sectors, including upward and downward directions. Target alignment and heading persistence favour progress along the original route without left/right oscillation.'],
  'MPC':['u* = argmin J(u₀…uH−1); execute u₀','Optimize bounded velocity controls over a finite horizon, apply the first action and solve again. A detour provides a terminal guide.'],
  'MPPI':['wₖ ∝ exp(−Jₖ/λ); u ← Σₖ wₖ uₖ','Score 64 noisy control sequences and weight the controls. Apply one command, shift the horizon and repeat. The detour supplies guidance.']}}
 };

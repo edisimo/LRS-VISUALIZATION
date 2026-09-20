@@ -40,7 +40,7 @@ The selector is ordered in three groups:
 - **Triangle mesh:** 48 triangles describe the surfaces of the same four simplified rack envelopes. This is analytic model geometry, not a reconstructed mesh from the cloud. Connectivity stores surfaces rather than all volume cells.
 - **Elevation map:** one highest observed height `h(x,y)` per XY column, derived from the PCD. This compact **2.5D** representation loses stacked surfaces and space below roofs/shelves, illustrating its limitations for indoor UAVs.
 
-Voxel/block/elevation cell widths are **0.10, 0.25 and 0.50 m**, defaulting to **0.10 m**. A display cell smaller than the cloud's 0.16 m downsampling does not create additional measured detail.
+Voxel/block/elevation cell widths are **0.10, 0.25 and 0.50 m**, defaulting to **0.25 m**. A display cell smaller than the cloud's 0.16 m downsampling does not create additional measured detail.
 
 **Why sparse is not always smaller:** dense occupancy is estimated at `N × 1 byte`; a hash entry at `K × 24 bytes` (1 byte value plus 23 bytes of assumed coordinates/indexing overhead). Sparse wins when `K/N < 1/24`, under these assumptions. A coarse, highly occupied grid can make the hash map larger. These estimates represent alternative implementations of the same values, not browser heap measurements. Octree storage uses an illustrative 40 bytes per node; block payloads exclude directory overhead; elevations use float32 heights and exclude the XY index.
 
@@ -48,7 +48,9 @@ Voxel/block/elevation cell widths are **0.10, 0.25 and 0.50 m**, defaulting to *
 
 Only the rack obstacles are inflated: **no outer building/crop boundary and no paths**. A drone marker with its physical radius and safety shell supplies scale.
 
-In grid mode a horizontal slice shows the occupied cells and the additional forbidden cells. The display computes `n = ceil((robot radius + margin) / cell width)` and uses a conservative rounded distance threshold `n × cell width` around analytic rack surfaces. This is a quantized Euclidean-offset illustration, rather than a Chebyshev cube dilation of a raster map. Playback grows this threshold from zero. Controls change cell width, radius, margin and slice altitude.
+**Whole volume** is the default in both voxel and octree modes. The orange voxel exterior shell surrounds the racks on all sides within the teaching volume; its entire enclosed region is forbidden, including hidden interior cells. Choose **Horizontal slice** to inspect individual layers; the altitude slider appears only for that view. Octree slices retain only leaves intersecting the selected altitude.
+
+In grid mode the display computes `n = ceil((robot radius + margin) / cell width)` and uses a conservative rounded distance threshold `n × cell width` around analytic rack surfaces. This is a quantized Euclidean-offset illustration, rather than a Chebyshev cube dilation of a raster map. Playback grows this threshold from zero. Controls change cell width, radius, margin, view type and (in slice mode) altitude.
 
 In octree mode, adaptive refinement occurs near the offset surface. Leaves are conservatively marked when `distance(center) − half-diagonal ≤ radius + margin`. This demonstrates mixed-size leaves intersecting the inflated region; “number of extra cells” is not a single meaningful value for an adaptive tree. Depth controls the finest available width.
 
@@ -92,26 +94,30 @@ The processing examples deliberately retain the **6-neighbour stepped A* baselin
 
 The former Path vs trajectory vignette has been removed. Equations and concise algorithm logic appear directly in each remaining view.
 
-## Local avoidance
+## Local avoidance: working 3D adaptations
 
-All methods now use the **same rack scene, start, goal and new suspended obstacle**. Potential fields no longer use a specially constructed U-shaped trap. The shared global reference is drawn purple where appropriate, local decisions green, and executed motion white.
+All four reactive examples now **reach the goal, avoid collisions and change altitude** in the prepared rack scene. Their histories are real computations, not interpolations of a replacement planner's route. This validates the displayed example, not arbitrary environments or physical flight dynamics.
 
-| Method | Decision rule | Teaching limitation |
+Classic Bug1/Bug2 and VFH were developed for planar navigation. There are published 3D Bug variants, including 3DBug and Frustumbug, and 3DVFH/3DVFH+ methods for UAVs. The lightweight implementations here preserve the central ideas with analytic obstacle geometry rather than reproducing a stereo-vision or point-cloud sensor stack.
+
+| Method | What was improved | Visible internals |
 |---|---|---|
-| A* replanning | Fresh search after the map changes | Global replanning, not a reactive controller |
-| D* Lite replanning | Repair retained `g/rhs` consistency | Same incremental sequence as in Planning |
-| Potential field | Goal attraction plus nearest-surface repulsion | Local minima can occur even in the actual racks; no forced-success fallback |
-| Bug2 | Seek goal, follow a boundary, leave at a closer m-line crossing | Finite-step **2D, fixed-altitude adaptation**; not a general 3D flight planner |
-| DWA | Sample acceleration-reachable velocities, reject unsafe stopping rollouts, score progress | Holonomic **3D adaptation** of a method originally developed for ground robots; local minima remain possible |
-| VFH | Build a binary angular obstacle histogram and choose a free sector | **2D binary teaching variant**, not full VFH/VFH+; cannot exploit vertical escape |
-| MPC | Optimize a bounded finite-horizon velocity sequence; execute its first control | Simplified single-integrator dynamics with a global-detour terminal guide |
-| MPPI | Exponentially weight 64 noisy control sequences; execute the weighted first command | Simplified weighted shooting, without the full path-integral noise/control correction |
+| **Bug 3D** | 3DBug-inspired sampling of inflated obstacle faces/edges in XYZ. Follow nearby ordered samples of the original global route. When blocked, choose a visible local boundary target, remember visited samples, and rejoin the first clear route sample beyond the obstruction. | Candidate boundary connections, purple route target, yellow active target, track/detour/rejoin state and altitude |
+| **Potential field** | Track the original route with attraction and repulsion, plus a tangential escape term. Surface normals are computed against the same inflated AABBs as the collision checker, preventing rounded-distance/corner mismatches. | Green attraction, coral repulsion, purple escape and yellow command vectors |
+| **DWA** | Track an original-route waypoint instead of pulling straight toward the final goal. Search acceleration-reachable XYZ velocities, predict 1.5 s of motion and require an admissible braking tail. | Good/bad rollouts, selected action, candidate count and altitude |
+| **VFH 3D** | Use 24 azimuth × 13 elevation sectors, finite-radius clearance rays, angular opening checks and heading persistence. Track the original route, with upward/downward escape available. | Spherical direction rays and a two-dimensional azimuth/elevation histogram; white marks the selected sector |
 
-Reactive methods display their real outcomes, including failure to reach the goal. The 3D collision filter prevents executing invalid segments; it does not secretly replace a failing method with A*. MPC/MPPI use detour guidance, while the simple reactive examples seek the goal directly, so arrival success is not an apples-to-apples controller benchmark.
+Bug 3D, potential fields, DWA and VFH follow the **original unrepaired global polyline**, which intersects the newly detected load. They react locally to that obstruction; none calls A*, consumes a repaired detour or substitutes a successful path. Potential fields, DWA and VFH can finish directly if the final goal becomes visible. Bug keeps following ordered route samples even when the final goal is visible; samples are spaced at most 0.3 m apart, reached within 0.12 m, and those inside inflated obstacles are skipped. Yellow markers identify the current tracking/boundary target.
 
-MPC/MPPI use a separate, validated 6-neighbour detour guide (independent of the 26-neighbour planner comparison) and retain their prepared 6/12/18-step horizons and 0.22 s action period. The rollout-count slider changes how many of the 24 saved alternatives are drawn, not the 64 samples used by MPPI. MPC's perturbation lines illustrate candidate alternatives rather than optimizer iterations.
+The potential-field escape term projects world-up onto the nearest obstacle face; over the top of a box it uses the projected target direction instead. This is an **augmented** field, not a claim that the original attractive/repulsive APF has no local minima. Bug uses finitely sampled surfaces and visit memory, without a general completeness guarantee. VFH uses idealized collision rays to populate a binary spherical histogram and opening checks, rather than the complete noisy-sensor 3DVFH+ implementation.
 
-Velocity obstacles, ORCA and CBF are possible extensions, not included in this revision. ORCA would benefit from an explicit reciprocal multi-agent scenario; moving-obstacle prediction is outside the current stationary-after-detection example.
+DWA limits velocity magnitude to 1.2 m/s and acceleration to 1.6 m/s² at a 0.15 s action interval; the cached executed controls are checked against both limits. The other three use bounded holonomic velocity commands without a quadrotor attitude/thrust model. A final segment check may scale an unsafe action; it does not generate an alternate route. Start/goal and obstacles remain unchanged.
+
+Fresh **A* replanning** and incremental **D* Lite replanning** remain available separately. **MPC/MPPI** retain their 6/12/18-step horizons and 0.22 s control interval, using a separately validated detour guide. The new original-route local methods therefore have a different guidance assumption from MPC/MPPI; this is not a universal controller benchmark. MPPI is simplified weighted shooting with 64 samples; displayed MPC perturbations are alternatives, not optimizer iterations.
+
+For 3D algorithm context, see [Frustumbug, TU Delft](https://repository.tudelft.nl/record/uuid%3A825121c5-b2c8-43ac-ac52-2672d837bc3b), [3D VFH documentation and 3DVFH+ reference](https://www.mathworks.com/help/uav/ref/controllervfh3d-system-object.html), and [augmented potential-field UAV navigation](https://arxiv.org/abs/2306.16276). These sources motivate the distinctions and adaptations; the code here is a small independent teaching implementation.
+
+Velocity obstacles, ORCA and CBF remain possible extensions. The current new obstacle is stationary after detection.
 
 ## Controls
 
@@ -149,6 +155,6 @@ node tests/revision.mjs
 
 `LRS-URK` remains unchanged. `maps/FEI_LRS_PCD/map.pcd` supplies the downsampled XYZ asset; `assets/provenance.json` records its hash, counts and original bounds. Four 3.09 × 1.05 m shelf footprints come from `models/fei_lrs_racks/model.sdf`, represented by conservative solid 3.2 m envelopes. Hangar SDF/DAE/world files were inspected for context. The large drone meshes were inspected but not copied; a procedural UAV marker keeps the views legible. Line-of-sight pruning follows the assignment's stated concept.
 
-`common/scene.js` supplies rendering/camera/colors; `common/math.js` supplies browser spatial operations; `common/algorithms.py` and `common/extensions.py` compute actual algorithm histories. Each topic owns a `view.js`; `app.js` owns shared controls/playback. `precomputed/lecture.json` stores histories, and `vendor/` contains offline Three.js r180 and its MIT notice. Source-derived data retains its original ownership and source terms.
+`common/scene.js` supplies rendering/camera/colors; `common/math.js` supplies browser spatial operations; `common/algorithms.py`, `common/extensions.py` and `common/local_control.py` compute actual algorithm histories. Each topic owns a `view.js`; `app.js` owns shared controls/playback. `precomputed/lecture.json` stores histories, and `vendor/` contains offline Three.js r180 and its MIT notice. Source-derived data retains its original ownership and source terms.
 
 Algorithm references: [D* Lite, Koenig and Likhachev](https://idm-lab.org/bib/abstracts/papers/aaai02b.pdf), [Dynamic Window Approach, Fox, Burgard and Thrun](https://publications.ri.cmu.edu/the-dynamic-window-approach-to-collision-avoidance). Implementations here are deliberately small teaching examples; their specific adaptations are described above.

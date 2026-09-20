@@ -38,14 +38,24 @@ export function render(ctx){
   if(+p.inflationStorage===1){
    // Refine at the obstacle shell; conservative leaf/cube intersection by its circumradius.
    let leaves=[];function split(lo,size,depth){let center=lo.map(v=>v+size/2),dist=distance(center,d.boxes);if(depth>=+p.depth||Math.abs(dist-R*t)>Math.sqrt(3)*size/2){leaves.push({lo,size,center,dist});return;}for(let i=0;i<8;i++)split(lo.map((v,k)=>v+((i>>k)&1)*size/2),size/2,depth+1);}split([0,2,0],10,0);
-   let shell=leaves.filter(c=>c.dist>0&&c.dist<=R*t+Math.sqrt(3)*c.size/2);wires(s,shell,C.inflated,.65);effective=10/2**p.depth;metric('Marked octree leaves',shell.length);metric('Leaf rule','d(center) − half diagonal ≤ R');
+   let shell=leaves.filter(c=>c.dist>0&&c.dist<=R*t+Math.sqrt(3)*c.size/2);if(+p.inflationView===1){shell=shell.filter(c=>c.lo[2]<=z&&c.lo[2]+c.size>=z);for(let c of shell)s.box([c.lo[0],c.lo[1],z-.02],[c.lo[0]+c.size,c.lo[1]+c.size,z+.02],C.inflated,.5);}else wires(s,shell,C.inflated,.65);effective=10/2**p.depth;metric('Marked octree leaves',shell.length);metric('Leaf rule','d(center) − half diagonal ≤ R');
   }else{
    const n=Math.ceil((R*t-1e-10)/r);effective=r;let threshold=n*r;
-   const cells=memo('rack-grid'+r,()=>{let list=[];for(let x=r/2;x<10;x+=r)for(let y=2+r/2;y<12;y+=r){let q=[x,y,z];list.push(q);}return list;});
-   for(let q0 of cells){let q=[q0[0],q0[1],z],dist=distance(q,d.boxes);if(dist<=0)base.push(q);else if(dist<=threshold)points.push(q);}
-   s.cubes(base,r,C.occupied,1);s.cubes(points,r,C.inflated,.8);const front=d.boxes[1][0][1];s.line([[5.95,front,z+.12],[5.95,front-threshold,z+.12]],C.frontier);for(let k=0;k<=n;k++)s.line([[5.87,front-k*r,z+.12],[6.03,front-k*r,z+.12]],C.frontier);metric('Extra cell layers',n);metric('Rounded grid radius',threshold.toFixed(2)+' m');metric('Rule','ceil((radius + margin) / cell)');
+   if(+p.inflationView===1){
+    const cells=memo('rack-slice'+r,()=>{let list=[];for(let x=r/2;x<10;x+=r)for(let y=2+r/2;y<12;y+=r)list.push([x,y]);return list;});
+    for(let xy of cells){let q=[...xy,z],dist=distance(q,d.boxes);if(dist<=0)base.push(q);else if(dist<=threshold)points.push(q);}
+    s.cubes(base,r,C.occupied,1);s.cubes(points,r,C.inflated,.8);metric('Extra forbidden cells',points.length.toLocaleString());
+    const front=d.boxes[1][0][1];s.line([[5.95,front,z+.12],[5.95,front-threshold,z+.12]],C.frontier);for(let k=0;k<=n;k++)s.line([[5.87,front-k*r,z+.12],[6.03,front-k*r,z+.12]],C.frontier);
+   }else{
+    // Cache distance samples once per resolution. Render the exterior shell rather
+    // than all hidden interior cubes; the entire enclosed region is forbidden.
+    const cells=memo('rack-volume'+r,()=>{let list=[];for(let x=r/2;x<10;x+=r)for(let y=2+r/2;y<12;y+=r)for(let zz=r/2;zz<5;zz+=r){let q=[x,y,zz],dist=distance(q,d.boxes);if(dist>0)list.push({q,dist});}return list;});
+    let count=0;for(let c of cells)if(c.dist<=threshold){count++;if(c.dist>Math.max(0,threshold-r*1.05))points.push(c.q);}
+    const shellMesh=s.cubes(points,r,C.inflated,.30);if(shellMesh)shellMesh.renderOrder=2;metric('Extra forbidden cells',count.toLocaleString());
+   }
+   metric('Extra cell layers',n);metric('Rounded grid radius',threshold.toFixed(2)+' m');metric('Rule','ceil((radius + margin) / cell)');
   }
-  const drone=[8.8,5,z];s.drone(drone);s.sphere(drone,+p.radius,'#fff',.22);s.sphere(drone,R,C.inflated,.2);metric('Drone diameter',(2*p.radius).toFixed(2)+' m');metric('Radius + margin',R.toFixed(2)+' m');metric('Cell / finest leaf',effective.toFixed(3)+' m');note('Only rack obstacles inflate. No building boundary, no route. Orange = forbidden UAV-center positions. Grid shows a horizontal slice; octree marks conservative intersecting leaves.');return;
+  const drone=[8.8,5,z];s.drone(drone);s.sphere(drone,+p.radius,'#fff',.22);s.sphere(drone,R,C.inflated,.2);metric('Drone diameter',(2*p.radius).toFixed(2)+' m');metric('Radius + margin',R.toFixed(2)+' m');metric('Cell / finest leaf',effective.toFixed(3)+' m');note('Only rack obstacles inflate. No building boundary, no route. Orange = forbidden UAV-center positions. Choose Whole volume or Horizontal slice. The whole-volume exterior shell encloses forbidden space (including hidden interior cells); it is clipped to the teaching volume.');return;
  }
  // One slice and probe shared by all three INFORMATION views; no routes or start/goal markers.
  geometry(s,d,.15);let points=[],colors=[];for(let x=.125;x<10;x+=.25)for(let y=2.125;y<12;y+=.25){let q=[x,y,z],dist=distance(q,d.boxes),value=Math.exp(-Math.max(0,dist)/(+p.falloff));points.push(q);colors.push(mode==='Occupancy'?(dist<=0?'#ff7186':'#3da997'):mode==='Costmap'?(dist<=0?'#ff7186':`hsl(${165-130*value},70%,${30+25*value}%)`):dist<0?'#ff7186':`hsl(${30+150*Math.min(1,dist/p.range)},65%,45%)`);}

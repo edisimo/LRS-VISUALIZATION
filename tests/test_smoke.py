@@ -72,8 +72,19 @@ class Smoke(unittest.TestCase):
                 for i,frame in enumerate(c['frames']):
                     expected=[v+c['dt']*u for v,u in zip(frame['position'],frame['control'])]
                     self.assertLess(math.dist(expected,c['actual'][i+1]),1e-4)
-        for c in av['local'].values():
+        for name,c in av['local'].items():
+            self.assertTrue(c['reached'],name)
+            self.assertLess(math.dist(c['actual'][-1],D['goal']),.25,name)
+            self.assertGreater(max(p[2] for p in c['actual'])-min(p[2] for p in c['actual']),1.5,name)
+            self.assertEqual(c['reference'],D['trajectory']['pruned'])
             self.assertEqual(c['actual'][0],D['start'])
+            for i,frame in enumerate(c['frames']):
+                expected=[v+c['dt']*u for v,u in zip(frame['position'],frame['control'])]
+                self.assertLess(math.dist(expected,c['actual'][i+1]),1e-4,name)
+                if name=='DWA':
+                    previous=c['frames'][i-1]['control'] if i else [0,0,0]
+                    self.assertLessEqual(math.dist(previous,frame['control']),c['acceleration_limit']*c['dt']+1e-4)
+                    self.assertLessEqual(math.dist(frame['control'],[0,0,0]),1.2001)
             self.assertTrue(all(collision_free(a,b,boxes) for a,b in zip(c['actual'][:-1],c['actual'][1:])))
         ds=D['planners']['D* Lite']
         self.assertGreater(ds['changed_edges'],0)
@@ -82,6 +93,24 @@ class Smoke(unittest.TestCase):
         self.assertEqual(av['execution'][0],av['detection'])
         self.assertEqual(av['execution'][-1],D['goal'])
         self.assertTrue(all(collision_free(a,b,boxes) for a,b in zip(av['execution'][:-1],av['execution'][1:])))
+    def test_bug_follows_and_rejoins_global_route(self):
+        c=D['avoidance']['local']['Bug 3D'];frames=c['frames']
+        direction=[b-a for a,b in zip(D['trajectory']['pruned'][0],D['trajectory']['pruned'][1])]
+        length=math.dist(direction,[0,0,0])
+        # Initially follow the supplied rising route, rather than aim at the goal.
+        for frame in frames[:5]:
+            speed=math.dist(frame['control'],[0,0,0])
+            self.assertLess(math.dist([v/speed for v in frame['control']],[v/length for v in direction]),1e-4)
+            self.assertEqual(frame['state'],'Track original global route')
+        states=[f['state'] for f in frames]
+        detour=states.index('Follow 3D boundary tangent')
+        rejoin=states.index('Rejoin original global route',detour)
+        resumed=states.index('Track original global route',rejoin)
+        self.assertLess(math.dist(frames[resumed]['position'],frames[resumed-1]['route_target']),.1201)
+        indices=[f['route_index'] for f in frames]
+        self.assertEqual(indices,sorted(indices))
+        self.assertTrue(c['reached'])
+
     def test_launchers(self):
         for name in ['mapping','planning','trajectory','avoidance']:
             with self.subTest(launcher=name):
