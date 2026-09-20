@@ -1,0 +1,3 @@
+# Needed only for regenerating the prepared teaching datasets.
+numpy>=1.24,<3
+scipy>=1.10,<2
