@@ -1,17 +1,14 @@
+import {renderDstar} from '../planning/view.js';
 import {C} from '../common/scene.js';
 import {interpolate} from '../common/math.js';
-let potential;
-function field(){
- const goal=[5,9,1.5],blocks=[[[3,6,0],[7,6.5,3]],[[3,3,0],[3.5,6,3]],[[6.5,3,0],[7,6,3]]];let p=[5,4,1.5],history=[];
- for(let i=0;i<180;i++){
-  const attraction=goal.map((v,k)=>(v-p[k])*.18),repulsion=[0,0,0];
-  for(let [lo,hi] of blocks){let nearest=p.map((v,k)=>Math.min(hi[k],Math.max(lo[k],v))),delta=p.map((v,k)=>v-nearest[k]),dist=Math.hypot(...delta);if(dist<2&&dist>.001)delta.forEach((v,k)=>repulsion[k]+=1.2*(1/dist-1/2)/dist**2*v/dist);}
-  let force=attraction.map((v,k)=>v+repulsion[k]);history.push({p:[...p],attraction,repulsion,force});let norm=Math.hypot(...force);p=p.map((v,k)=>v+.04*force[k]/Math.max(1,norm));
- }return {history,blocks,goal};
-}
 export function render(ctx){let {scene:s,data:d,mode,t,params,metric,note}=ctx;const av=d.avoidance;
- if(mode==='Potential field'){
-  potential??=field();const {history,blocks,goal}=potential;blocks.forEach(b=>s.box(...b,C.occupied,.7));s.sphere(goal,.2,C.goal);let i=Math.min(history.length-1,Math.floor(t*history.length)),h=history[i];s.path(history.slice(0,i+1).map(h=>h.p));s.drone(h.p);for(let [vector,color] of [[h.attraction,C.path],[h.repulsion,C.dynamic],[h.force,C.frontier]]){s.path([h.p,h.p.map((v,k)=>v+vector[k])],color,.04);s.sphere(h.p.map((v,k)=>v+vector[k]),.07,color);}metric('Net force',Math.hypot(...h.force).toFixed(3));metric('Goal distance',Math.hypot(...goal.map((v,k)=>v-h.p[k])).toFixed(2)+' m');metric('State',i>100?'Stalled at local minimum':'Integrating force');note('Separate U-shaped failure vignette · symmetry cancels lateral escape · forces recomputed from attraction and nearest-surface repulsion');return;
+ if(mode==='D* Lite replanning'){renderDstar(ctx);return;}
+ if(av.local?.[mode]){
+  let c=av.local[mode],i=Math.min(c.frames.length-1,Math.floor(t*c.frames.length)),f=c.frames[i];s.environment(d,.5);s.box(...av.obstacle,C.dynamic,.7);s.path(d.trajectory.pruned,C.initial,.018);s.path(c.actual.slice(0,t===1?c.actual.length:i+1),'white',.025);const current=t===1?c.actual.at(-1):f.position;s.drone(current);
+  if(mode==='Potential field'){for(let [v,color] of [[f.attraction,C.path],[f.repulsion,C.dynamic],[f.control,C.frontier]]){s.path([f.position,f.position.map((x,k)=>x+v[k])],color,.04);}}
+  else {f.rollouts.forEach((q,j)=>s.line([f.position,...q],f.bad[j]?C.dynamic:C.visited,.4));s.path(f.prediction,C.path,.05);}
+  if(mode==='VFH')ctx.plot(f.histogram,0,'Blocked angular sectors (0 = open, 1 = blocked)',C.inflated);
+  metric('Control step',i+1+' / '+c.frames.length);metric('State',t===1?(c.reached?'Goal reached':'Goal not reached'):f.state);metric('Goal distance',Math.hypot(...current.map((v,k)=>v-d.goal[k])).toFixed(2)+' m');metric('Motion model',['VFH','Bug2'].includes(mode)?'Fixed altitude · 2D':'3D velocity');note(mode==='Potential field'?'Same rack scene; goal attraction + obstacle repulsion. Local minima can stall this method; no hidden global detour or forced failure layout.':mode==='Bug2'?'Bug2-inspired finite-step boundary following in the horizontal plane. It has no general 3D completeness guarantee.':mode==='VFH'?'Binary polar-histogram illustration, not full VFH+. Horizontal sensing misses vertical routes and may oscillate.':'DWA-inspired acceleration-reachable 3D velocity window. Rollouts must allow braking; local minima remain possible.');return;
  }
  s.environment(d,.5);s.path(d.trajectory.pruned,C.initial,.025);
  if(mode==='A* replanning'){

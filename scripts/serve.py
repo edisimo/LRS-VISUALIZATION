@@ -11,7 +11,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--topic',choices=['mapping','planning','trajectory','avoidance','full_pipeline'],default='full_pipeline')
+    parser.add_argument('--topic',choices=['mapping','planning','trajectory','avoidance'],default='mapping')
     parser.add_argument('--port',type=int,default=8765)
     parser.add_argument('--no-browser',action='store_true')
     args=parser.parse_args()

@@ -48,15 +48,15 @@ def path_clearance(p):
     return float(clearance(points).min())
 
 
-def graph_search(kind='A*',weight=1.,boxes=BOXES,start=START,goal=GOAL):
+def graph_search(kind='A*',weight=1.,boxes=BOXES,start=START,goal=GOAL,connectivity=26):
     t=time.perf_counter(); step=.5
     s=tuple(np.rint(start/step).astype(int));g=tuple(np.rint(goal/step).astype(int))
     costs={s:0.};parent={s:s};closed=set();order=[];frontiers=[]
     h=lambda n: float(np.linalg.norm((np.array(n)-g)*step))*(0 if kind=='Dijkstra' else weight)
     queue=[(h(s),0,s)]
     offsets=[(i,j,k) for i in [-1,0,1] for j in [-1,0,1] for k in [-1,0,1] if (i,j,k)!=(0,0,0)]
-    # A 6-connected baseline makes the contrast with any-angle Theta* legible.
-    offsets=[o for o in offsets if sum(abs(v) for v in o)==1]
+    # Identical connectivity and swept-sphere edge validation for all graph planners.
+    if connectivity==6:offsets=[o for o in offsets if sum(abs(v) for v in o)==1]
     while queue:
         _,cost,n=heapq.heappop(queue)
         if n in closed:continue
@@ -133,6 +133,7 @@ def prune(path):
 
 
 def resample(path,n=45):
+    path=np.asarray(path)
     d=np.r_[0,np.cumsum(np.linalg.norm(np.diff(path,axis=0),axis=1))]
     return np.column_stack([np.interp(np.linspace(0,d[-1],n),d,path[:,k]) for k in range(3)])
 

@@ -1,187 +1,154 @@
 # LRS Flight Lab
 
-An offline, interactive 3D lecture companion for Master's students in Cybernetics and Robotics. Five connected workspaces explain how surface samples become a map, a route, a timed trajectory, and finally obstacle-aware UAV motion.
+An offline, interactive 3D lecture companion for Master's students in Cybernetics and Robotics. Four workspaces explain map representations, path planning, trajectory processing and local avoidance in the FEI hangar.
 
-The real FEI hangar point cloud establishes the setting. A small, conservative model of the same shelving units keeps the algorithm demonstrations readable. All scenes use metres and Z-up coordinates; the planning start is `(4, 3, 1.5)` and goal is `(5, 9, 1.5)`.
+## Run
 
-## Quick start
-
-**No package installation, ROS, Gazebo, or preprocessing is needed for lecture playback.** Use Python 3.10+ and a modern desktop browser with WebGL2. Linux is the primary target; the Python launcher also works on macOS/Windows. Shell launchers require Bash.
+Python 3.10+ and a desktop WebGL2 browser are sufficient. No ROS, Gazebo, npm installation, internet access or preprocessing is needed for playback. Linux/Bash is the primary launcher environment; the Python server also works on Windows/macOS.
 
 ```bash
 cd LRS-VISUALIZATIONS
-
 ./run_mapping.sh
 ./run_planning.sh
 ./run_trajectory.sh
 ./run_avoidance.sh
-./run_full_demo.sh
 ```
 
-Run **one** of these commands. Each starts the same application at the requested tab and opens `http://127.0.0.1:8765`. Switch among all five tabs without restarting. Press **Play** to animate; the complete sequence lasts 84 seconds at 1×. Stop the server with Ctrl+C.
-
-If a server is already running, use its tabs or stop it before starting another launcher. An additional instance can use `--port 8766`. On a remote machine or when you want to open the browser yourself:
+Run **one** launcher, then switch topics in the same browser tab. It opens `http://127.0.0.1:8765`. If that port is already in use, use the existing tab, or pass `--port 8766`. For manual browser opening, add `--no-browser`.
 
 ```bash
-./run_full_demo.sh --no-browser --port 8765
-# Cross-platform equivalent:
-python3 scripts/serve.py --topic full_pipeline --no-browser
+python3 scripts/serve.py --topic mapping --no-browser
 ```
 
-The launcher binds only to loopback. The browser loads locally vendored Three.js and prepared data, with no CDN, network account, fonts, API keys, or runtime Python packages. Opening `index.html` directly as a file is not supported because browser modules and data fetches require a local HTTP server.
+All JavaScript and datasets are local. The server binds to loopback. Opening `index.html` directly is unsupported because modules and dataset loading need HTTP. The former Complete pipeline section and its launcher have been removed.
 
-## What to show
+## Mapping: separate geometry, storage and information
 
-### 1. Map representations
+The selector is ordered in three groups:
 
-| Demo | What students see | Controls |
+1. **Geometry/storage:** point cloud, dense voxels, sparse voxels, blocks, octree, triangle mesh and elevation map.
+2. **Collision processing:** inflation around obstacles only.
+3. **Information in space:** occupancy, cost and ESDF, kept together with the same slice/probe.
+
+### Geometry and storage
+
+- **Point cloud:** 53,799 original surface points, downsampled from the 620,311-point PCD. Point size and display sampling are adjustable. Missing points do not imply observed free space.
+- **Dense voxels:** allocate all `N = Nx Ny Nz` cells in the bounded 10 × 10 × 5 m volume. Floor markers show one allocation slice; occupied surface samples are cubes.
+- **Sparse voxels:** the identical occupied surface cells, with only `K` entries allocated in a hash map. The current representation's memory estimate is prominent; both estimates and their ratio are shown for comparison.
+- **Voxel blocks:** a sparse directory of 2 m blocks containing dense local grids. Playback moves a local region of interest.
+- **Octree:** a 10 m root cube at `(0,2,0)`, with genuine eight-child subdivisions near samples and coarse empty leaves. Maximum depths **1–6** are selectable. Geometry is batched so deeper trees do not require one draw call per leaf.
+- **Triangle mesh:** 48 triangles describe the surfaces of the same four simplified rack envelopes. This is analytic model geometry, not a reconstructed mesh from the cloud. Connectivity stores surfaces rather than all volume cells.
+- **Elevation map:** one highest observed height `h(x,y)` per XY column, derived from the PCD. This compact **2.5D** representation loses stacked surfaces and space below roofs/shelves, illustrating its limitations for indoor UAVs.
+
+Voxel/block/elevation cell widths are **0.10, 0.25 and 0.50 m**, defaulting to **0.10 m**. A display cell smaller than the cloud's 0.16 m downsampling does not create additional measured detail.
+
+**Why sparse is not always smaller:** dense occupancy is estimated at `N × 1 byte`; a hash entry at `K × 24 bytes` (1 byte value plus 23 bytes of assumed coordinates/indexing overhead). Sparse wins when `K/N < 1/24`, under these assumptions. A coarse, highly occupied grid can make the hash map larger. These estimates represent alternative implementations of the same values, not browser heap measurements. Octree storage uses an illustrative 40 bytes per node; block payloads exclude directory overhead; elevations use float32 heights and exclude the XY index.
+
+### Inflation
+
+Only the rack obstacles are inflated: **no outer building/crop boundary and no paths**. A drone marker with its physical radius and safety shell supplies scale.
+
+In grid mode a horizontal slice shows the occupied cells and the additional forbidden cells. The display computes `n = ceil((robot radius + margin) / cell width)` and uses a conservative rounded distance threshold `n × cell width` around analytic rack surfaces. This is a quantized Euclidean-offset illustration, rather than a Chebyshev cube dilation of a raster map. Playback grows this threshold from zero. Controls change cell width, radius, margin and slice altitude.
+
+In octree mode, adaptive refinement occurs near the offset surface. Leaves are conservatively marked when `distance(center) − half-diagonal ≤ radius + margin`. This demonstrates mixed-size leaves intersecting the inflated region; “number of extra cells” is not a single meaningful value for an adaptive tree. Depth controls the finest available width.
+
+### Occupancy, cost and ESDF
+
+These are **different values associated with the same location**, not competing storage structures. All three use the same 0.25 m horizontal sample slice of the rack-envelope model, retain the selected slice/probe when switching, and omit routes and start/goal markers.
+
+| View | Question | Value / visualization |
 |---|---|---|
-| Point cloud | 53,799 original measured surface samples, downsampled from 620,311 | Point size; display subsampling |
-| Dense voxels | Occupied cubes plus markers for all allocated cell centers | 0.25 / 0.5 / 1 m cell size |
-| Sparse voxels | Identical occupied cells, allocated individually | Same resolutions; memory comparison |
-| Voxel blocks | A rolling region allocates 2 m blocks with dense cells inside | Cell size; playback/scrub |
-| Octree | Every split produces eight children; empty regions remain coarse | Maximum depth 1–4 |
-| Occupancy | Surface samples overlaid with model-derived solid occupancy | Slice altitude; reveal playback |
-| Inflation | Drone radius and margin expand forbidden space; the aisle closes | Radius; margin; playback |
-| Costmap | Exponential clearance penalty, plus short and clearance-optimized paths | Slice altitude; falloff length |
-| ESDF | Signed Euclidean distance to solid boxes and crop boundaries | Slice altitude; color range; click to probe |
+| Occupancy | Is there an obstacle **here**? | 0 = free, 1 = occupied; binary green/coral colors |
+| Costmap | How undesirable is this location? | `100 exp(−max(d,0)/falloff)`; arbitrary penalty 0–100 with a labeled color ramp |
+| ESDF | How far is the nearest surface? | Signed metres; click a point to see a white nearest-surface ruler |
 
-Dense/sparse voxelization uses the **real downsampled PCD**, cropped to `[0,10] × [2,12] × [0,5]` m. The complete cloud remains visible in the raw-cloud scene. The octree uses a 10 m root cube at `(0,2,0)` so it has equal side lengths.
+These views measure distance to **racks only**. The model supplies known free space; unknown occupancy and sensor ray integration are not simulated. Inflation is a separate collision-processing view, so a cost penalty is not silently confused with binary occupancy.
 
-Occupancy, inflation, costs, distance queries and planning use **solid rack envelopes**, not a sensor-derived free-space reconstruction. Missing PCD samples are never treated as evidence of observed free space. The envelope model conservatively fills shelving gaps and assumes the rest of the bounded scene is known free; unknown occupancy is not simulated. The 0.5 m occupancy cubes are center samples, not exact surface rasterization.
+## Planning
 
-Memory numbers are explanatory payload estimates: dense occupancy = 1 byte per cell; sparse entry = 24 bytes including assumed key/hash overhead; octree = 40 bytes per node; blocks = 1 byte per internal cell excluding block-table overhead. They are **not browser heap measurements**. Sparse storage can use more memory than a compact dense array at high occupancy.
+Dijkstra, A*, weighted A* and Theta* all use the **same 26-neighbour, 0.5 m 3D graph**, Euclidean edge weights, and 0.35 m collision radius. Every diagonal edge is swept-segment collision-checked; no corner cutting is allowed. Theta* additionally tests visible ancestors. Its standalone view no longer overlays A*.
 
-### 2. Path planning
+RRT, RRT* and Informed RRT* replay seeded samples, parent selection and actual rewiring. The informed ellipsoid appears only after a first solution. These deliberately small runs use a fixed neighbour radius and are not asymptotic performance benchmarks.
 
-Dijkstra, A*, weighted A* (`w=2.5`) and Theta* replay actual searches on the same 0.5 m, 6-connected **3D** graph. Blue points show expanded nodes; yellow shows actual queued frontier snapshots, recorded every 20 expansions. Theta* performs ancestor line-of-sight checks during search; the purple A* baseline makes the any-angle change visible.
+**PRM** first samples free configurations, connects nearby visible samples, and then searches the resulting reusable roadmap. Playback separates sampling, edge construction and graph search. The prepared example uses 350 vertices and 14 nearest-neighbour candidates per vertex.
 
-RRT, RRT* and Informed RRT* replay seeded continuous 3D samples, parent selection, and tree edges. RRT* updates descendant costs after rewiring; pink highlights rewires from the latest eight accepted samples. The best-path history contains only genuine improvements. Informed RRT* samples a 3D prolate hyperspheroid after finding a route. The finite teaching runs use 1,100 attempts, 0.85 m extension and 1.65 m neighbor radius; this fixed-radius illustration is not an asymptotic-performance benchmark.
+**D* Lite** retains `g`, one-step lookahead `rhs`, and its priority queue from the initial backward search. The UAV advances one original grid edge; the moving-start key offset `km` changes. A new obstacle raises affected edge costs, inconsistent vertices are updated, and the saved search is repaired. Orange marks changed-edge endpoints and yellow marks actual repair expansions. This is a real incremental implementation, not a fresh A* search relabelled as D* Lite.
 
-**Comparison** overlays Dijkstra, A*, Theta*, RRT, RRT* and Informed RRT* and lists preparation time, vertices/expansions, length and sampled minimum clearance. Graph expansion counts and sampling-tree sizes are different quantities. Timings are actual wall-clock measurements of the Python preparation runs on the machine that generated the cache, not playback timings or universal algorithm rankings.
+**Comparison** has independent checkboxes for every planner, all enabled by default. It compares initial-map routes, including D* Lite's initial route; the repaired route is deliberately kept out of that unchanged-map comparison. Measured preparation runtime, expansion/vertex count, path length and minimum clearance update with visibility. Counts across graph and sampling planners represent different quantities; timings describe these implementations in this scene only.
 
-All planners use an exact segment/AABB slab test with each rack box expanded by 0.35 m and the outer bounds contracted by 0.35 m. This is a conservative swept-sphere check: box corners are more restrictive than Euclidean-radius inflation. Mapping's Euclidean inflation visualization therefore differs slightly near corners. The mapping radius controls do **not** modify prepared planner histories; the app labels this explicitly.
+All planners conservatively expand rack AABBs by 0.35 m and contract planning bounds. Mapping inflation intentionally omits the bounds for visual clarity. AABB inflation is more restrictive at corners than a Euclidean spherical offset.
 
-### 3. Paths and trajectories
+## Paths and trajectories
 
-Raw A* exposes each grid waypoint. Line-of-sight pruning tries the farthest reachable waypoint, displaying accepted and rejected edges. Seeded random shortcutting removes intermediate points only after a collision check. Both retain the finite-robot collision model.
+The processing examples deliberately retain the **6-neighbour stepped A* baseline** to make waypoint removal legible. This is labelled in the UI; it does not change the 26-neighbour planner comparison.
 
-Cubic B-spline approximation of the pruned path demonstrates collision risk: unsafe samples are red. The path-versus-trajectory vignette uses a sharp 90° corner, a moving UAV, position/velocity/acceleration readouts and a speed chart. Its two four-second, seventh-degree segments stop at the corner; attempting the turn at nonzero speed instead requires a discontinuous velocity.
+- **Raw A*** displays every waypoint.
+- **Line-of-sight pruning** tests farthest-visible waypoint connections; accepted tests are green, rejected tests red.
+- **Random shortcutting** tries seeded waypoint pairs and accepts validated shorter connections.
+- **Spline smoothing** uses a cubic B-spline approximation that actually cuts into obstacles; unsafe samples are red.
+- **Minimum snap / minimum jerk** solve joint polynomial smoothness QPs with fixed segment times, waypoint constraints and derivative continuity. Seventh-degree minimum snap is continuous through jerk; fifth-degree minimum jerk through acceleration. These solves do not impose collision, thrust or actuator constraints; sampled clearance is reported.
+- **CHOMP-inspired optimization** uses covariant smoothness/obstacle gradient descent and a feasibility-preserving line search. Orange directions illustrate the distance gradient; objective history is shown.
+- **STOMP-inspired optimization** samples 24 correlated perturbations per iteration, computes exponential cost weights and proposes a weighted update. Eight trial trajectories are drawn. Only feasible objective improvements are accepted; the implementation may also choose an improving sampled trial. This simplified whole-trajectory scoring variant omits full STOMP per-timestep cost-to-go weighting. It uses no obstacle-cost gradient.
 
-Minimum snap solves a **joint quadratic program** for seventh-degree piecewise polynomials, minimizing integrated squared fourth derivative, with fixed waypoint positions, zero endpoint derivatives and continuity through jerk. Minimum jerk similarly uses fifth-degree polynomials and continuity through acceleration. Segment durations are fixed from distance, not optimized. These are genuine smoothness minimizers, but **do not impose collision, thrust, attitude or actuator constraints**. The view reports sampled clearance and colors violations red; a smooth result is not presented as automatically flyable.
+The former Path vs trajectory vignette has been removed. Equations and concise algorithm logic appear directly in each remaining view.
 
-CHOMP is explicitly **CHOMP-inspired**: covariant descent uses a second-difference smoothness metric and analytic-box signed-distance penalties, with finite-difference gradients and collision-checked backtracking. It illustrates smoothness/obstacle forces and objective reduction, but omits CHOMP's full arc-length-weighted functional and continuous robot dynamics. The orange line segments show distance ascent directions; the green curve and objective chart follow saved iterations.
+## Local avoidance
 
-### 4. Local obstacle avoidance
+All methods now use the **same rack scene, start, goal and new suspended obstacle**. Potential fields no longer use a specially constructed U-shaped trap. The shared global reference is drawn purple where appropriate, local decisions green, and executed motion white.
 
-A* replanning introduces a suspended load intersecting the original route. The UAV stops at a detection point, the collision map changes, a fresh A* search finds a detour, and motion resumes. This is ordinary replanning, **not D* Lite**.
+| Method | Decision rule | Teaching limitation |
+|---|---|---|
+| A* replanning | Fresh search after the map changes | Global replanning, not a reactive controller |
+| D* Lite replanning | Repair retained `g/rhs` consistency | Same incremental sequence as in Planning |
+| Potential field | Goal attraction plus nearest-surface repulsion | Local minima can occur even in the actual racks; no forced-success fallback |
+| Bug2 | Seek goal, follow a boundary, leave at a closer m-line crossing | Finite-step **2D, fixed-altitude adaptation**; not a general 3D flight planner |
+| DWA | Sample acceleration-reachable velocities, reject unsafe stopping rollouts, score progress | Holonomic **3D adaptation** of a method originally developed for ground robots; local minima remain possible |
+| VFH | Build a binary angular obstacle histogram and choose a free sector | **2D binary teaching variant**, not full VFH/VFH+; cannot exploit vertical escape |
+| MPC | Optimize a bounded finite-horizon velocity sequence; execute its first control | Simplified single-integrator dynamics with a global-detour terminal guide |
+| MPPI | Exponentially weight 64 noisy control sequences; execute the weighted first command | Simplified weighted shooting, without the full path-integral noise/control correction |
 
-The potential-field vignette integrates attractive and nearest-surface repulsive forces in a separate, symmetric U-shaped obstacle layout. Opposing forces trap the UAV in a local minimum. Cyan, coral and yellow vectors show attraction, repulsion and the sum.
+Reactive methods display their real outcomes, including failure to reach the goal. The 3D collision filter prevents executing invalid segments; it does not secretly replace a failing method with A*. MPC/MPPI use detour guidance, while the simple reactive examples seek the goal directly, so arrival success is not an apples-to-apples controller benchmark.
 
-MPC solves a bounded, single-integrator 3D velocity-control problem with SciPy L-BFGS-B. MPPI is a simplified sampling controller: 64 temporally correlated velocity perturbations are scored, exponentially weighted, and combined into a command. It omits the full stochastic path-integral change-of-measure/control-noise correction; it teaches weighted shooting rather than claiming to reproduce a full flight controller.
+MPC/MPPI use a separate, validated 6-neighbour detour guide (independent of the 26-neighbour planner comparison) and retain their prepared 6/12/18-step horizons and 0.22 s action period. The rollout-count slider changes how many of the 24 saved alternatives are drawn, not the 64 samples used by MPPI. MPC's perturbation lines illustrate candidate alternatives rather than optimizer iterations.
 
-Both execute one 0.22 s action and shift the horizon. Choose **6, 12 or 18 prediction steps** to load distinct computed runs immediately. Display 4–24 candidate rollouts without changing the 64 samples used by MPPI. MPC's displayed perturbations illustrate alternatives; they are not L-BFGS-B iterates. Purple = original global path; green = predicted local motion; white = executed motion; yellow = first action; coral = obstacle/violating rollout.
+Velocity obstacles, ORCA and CBF are possible extensions, not included in this revision. ORCA would benefit from an explicit reciprocal multi-agent scenario; moving-obstacle prediction is outside the current stationary-after-detection example.
 
-A collision-free A* detour provides successive terminal guide waypoints to escape local minima. Consequently this is **detour-guided predictive tracking**, not proof that a local controller discovers a way around arbitrary obstacles. A first-action collision filter can stop an invalid weighted control; its status is displayed. The suspended load is initially unknown but stationary after detection. Moving-obstacle prediction and full quadrotor dynamics are not implemented.
+## Controls
 
-### 5. Complete pipeline
+Left drag orbits, wheel zooms, right drag pans. Perspective/Top/Camera buttons reset the view. Space plays/pauses; Right arrow steps; R resets parameters, progress and camera; C resets the camera; **1–4** select topics. The timeline scrubs prepared histories, and speed selects 0.5–4× playback. Shortcuts do not intercept focused form controls. The fullscreen button is available in the header.
 
-Twelve highlighted stages connect hangar geometry, surface cloud, voxel occupancy, inflation, A* search, route extraction, pruning, timed motion, a newly detected suspended load, replanning, repaired execution and arrival.
+Click any of Occupancy/Costmap/ESDF to select the shared probe. Comparison checkboxes show/hide routes and their metric rows. Reset restores all comparison routes. A desktop display of at least 1280 × 800 is recommended.
 
-This is an educational composition: surface voxelization transitions to model-derived conservative rack occupancy. Timed execution uses seventh-degree **stop-to-stop minimum-snap interpolation on validated straight segments**, rather than executing the unconstrained joint polynomial example. The UAV stays at its detection position during replanning, and the repaired trajectory starts at that same position. It stops at each remaining corner; no dynamic-feasibility claim is made.
+## Precomputation and tests
 
-## Presentation controls
-
-| Input | Action |
-|---|---|
-| Left drag | Orbit |
-| Wheel / trackpad | Zoom |
-| Right drag | Pan |
-| Perspective / Top / Camera | Restore a preset view |
-| Play / Space | Play or pause (restarts if at end) |
-| Step / Right arrow | Advance one search/controller event, or a small step in other views |
-| Timeline | Scrub deterministically |
-| Speed | 0.5×, 1×, 2×, 4× playback |
-| Reset / R | Restore parameter defaults, progress and camera |
-| C | Reset camera |
-| 1–5 | Select a topic |
-| Fullscreen icon | Browser fullscreen |
-| Click ESDF slice | Inspect distance at that location |
-
-Keyboard shortcuts are disabled while a control has focus so they do not interfere with normal input. Use a desktop screen, preferably 1280 × 800 or larger. See [LECTURE_ORDER.md](LECTURE_ORDER.md) for suggested sequences.
-
-## Regenerating prepared data
-
-Normal launch never preprocesses. Distributed assets include a 0.65 MB little-endian float32 XYZ cloud and a few MB of JSON histories. Browser voxelization, octree construction, distance slices, inflation and the small potential-field example compute locally. Planning, pruning, polynomial solves, CHOMP iterations and controller rollouts are cached.
-
-For regeneration only, install NumPy and SciPy in an isolated environment. This avoids conflicts with ROS/system Python packages:
+Normal launch reads bundled binary/JSON assets. Mapping and information views compute locally in JavaScript. Algorithm histories, including D* Lite repairs, PRM, STOMP and reactive-control traces, are prepared in Python.
 
 ```bash
+# Only for regenerating data:
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ./scripts/precompute_all.sh
-# If LRS-URK is not the sibling directory:
+# Optional explicit source repository:
 ./scripts/precompute_all.sh /path/to/LRS-URK
-```
 
-The script prefers `.venv/bin/python` when present. Preparation takes substantially longer than playback; do it before the lecture. Fixed seeds make geometry and algorithm histories reproducible within numerical tolerances; measured runtimes naturally change. This environment was verified with NumPy 2.2.6 and SciPy 1.15.3.
-
-## Source assets and relation to LRS-URK
-
-`LRS-URK` is left unchanged. The application works without it after preparation.
-
-- `maps/FEI_LRS_PCD/map.pcd`: original 620,311-point ASCII PCD. One original point is retained per 0.16 m voxel; the XYZ subset is stored in `assets/hangar-points.bin`. No synthetic points are substituted. `assets/provenance.json` records source hash, bounds and counts.
-- `models/fei_lrs_racks/model.sdf`: four shelf locations and 3.09 × 1.05 m footprints. Solid 3.2 m tall envelopes are an explicitly conservative educational simplification.
-- `models/fei_lrs_hangar/model.sdf`, `models/hangar/*.dae`, and `worlds/fei_lrs_gazebo.world`: inspected for coordinate/world context. Large textured meshes are not copied.
-- `models/fei_lrs_drone/drone_lowres.dae` and `propeller.dae`: inspected; the app uses a small procedural quadrotor marker for consistent readability, rather than copying 6.9 MB of meshes.
-- `assignments/assignment1/01_map_and_path_planning.md`: the farthest-visible pruning demonstration follows the assignment's line-of-sight shortcutting concept. No pre-existing planner implementation was found in this repository.
-
-Source-derived data retains its original ownership and applicable source terms. Three.js r180 is vendored with its MIT notice in `vendor/THREE-LICENSE`.
-
-## Architecture
-
-```text
-app.js / index.html / style.css   Shared UI, playback and layout
-common/scene.js                   Three.js camera, geometry and shared colors
-common/math.js                    Browser voxelization, octree, signed distances
-common/catalog.js                Concise teaching copy and topic definitions
-common/algorithms.py              Search, collision checks, minimum derivatives, optimizer
-mapping/view.js                  Mapping and storage scenes
-planning/view.js                 Search-history and comparison scenes
-trajectory/view.js               Path processing and trajectory scenes
-avoidance/view.js                Replanning, potential field, predictive-control scenes
-full_pipeline/view.js            Integrated twelve-stage sequence
-assets/                          Small source-derived cloud and provenance
-precomputed/lecture.json          Actual algorithm histories and recorded metrics
-vendor/                          Offline Three.js modules and license
-scripts/                         Launcher, preparation and checks
-tests/                           Cache/collision, launch, math and browser smoke tests
-```
-
-Instanced cubes keep voxel views compact, and playback rebuilds scene geometry at a capped update frequency while camera rendering remains independent. Prepared JSON and the binary cloud load concurrently. There is no application backend beyond Python's local static file server.
-
-Three.js rendering uses [InstancedMesh](https://threejs.org/docs/pages/InstancedMesh.html) and [OrbitControls](https://threejs.org/docs/pages/OrbitControls.html). For the mathematical context of polynomial smoothness optimization, see the primary research paper [Generating Minimum-Snap Quadrotor Trajectories Really Fast](https://arxiv.org/abs/2008.00595); the small dense QP here is a teaching implementation, not that paper's optimized solver.
-
-## Verification
-
-```bash
+# Asset, cache, collision, launch, math and syntax checks:
 ./scripts/test_all.sh
-```
 
-The standard-library Python tests verify asset counts, prepared data, feasible planner paths, genuine rewiring and cost improvements, polynomial constraints, controller goal arrival, collision-free executed segments, and all five launchers from a different working directory. If Node is available, the script also runs math tests and syntax-checks all application modules.
-
-For an actual Chromium/WebGL smoke test (development dependencies only):
-
-```bash
+# Optional Chromium development smoke checks (server on port 8765):
 npm ci
 npx playwright install chromium
-./run_full_demo.sh --no-browser
+./run_mapping.sh --no-browser
 # In another terminal:
 node tests/browser.mjs
+node tests/revision.mjs
 ```
 
-The browser check visits every concept, checks the DOM and browser errors, and captures representative screenshots. It requires the server on port 8765. Linux environments missing Chromium system libraries may need `npx playwright install-deps chromium`.
+`precompute_all.sh` prefers `.venv/bin/python`. Preparation is an explicit offline operation and can take minutes; never run it during a lecture. Seeds are fixed; measured timings change between regenerations. `scripts/refresh_revision.py` updates algorithm histories against existing source assets/controller caches and is also called by complete preparation.
 
-## Deliberate scope
+## Assets and architecture
 
-The 20 priority concepts are covered; secondary additions include weighted A*, minimum jerk, random shortcutting, voxel blocks and the potential-field failure. D* Lite, RRT-Connect, PRM/PRM*, BIT*, STOMP, TrajOpt, velocity obstacles, ORCA and TSDF are not included. Useful next extensions would be moving-obstacle predictions, sensor raycasting for unknown/free occupancy, constrained joint minimum-snap optimization, and interactive live planning beyond the prepared examples.
+`LRS-URK` remains unchanged. `maps/FEI_LRS_PCD/map.pcd` supplies the downsampled XYZ asset; `assets/provenance.json` records its hash, counts and original bounds. Four 3.09 × 1.05 m shelf footprints come from `models/fei_lrs_racks/model.sdf`, represented by conservative solid 3.2 m envelopes. Hangar SDF/DAE/world files were inspected for context. The large drone meshes were inspected but not copied; a procedural UAV marker keeps the views legible. Line-of-sight pruning follows the assignment's stated concept.
+
+`common/scene.js` supplies rendering/camera/colors; `common/math.js` supplies browser spatial operations; `common/algorithms.py` and `common/extensions.py` compute actual algorithm histories. Each topic owns a `view.js`; `app.js` owns shared controls/playback. `precomputed/lecture.json` stores histories, and `vendor/` contains offline Three.js r180 and its MIT notice. Source-derived data retains its original ownership and source terms.
+
+Algorithm references: [D* Lite, Koenig and Likhachev](https://idm-lab.org/bib/abstracts/papers/aaai02b.pdf), [Dynamic Window Approach, Fox, Burgard and Thrun](https://publications.ri.cmu.edu/the-dynamic-window-approach-to-collision-avoidance). Implementations here are deliberately small teaching examples; their specific adaptations are described above.

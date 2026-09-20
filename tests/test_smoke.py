@@ -32,7 +32,7 @@ class Smoke(unittest.TestCase):
         meta=json.loads((ROOT/'assets/provenance.json').read_text())
         self.assertEqual((ROOT/'assets/hangar-points.bin').stat().st_size,meta['display_points']*12)
         self.assertEqual(meta['original_points'],620311)
-        for file in ['app.js','mapping/view.js','planning/view.js','trajectory/view.js','avoidance/view.js','full_pipeline/view.js','vendor/three.module.min.js','vendor/three.core.min.js','vendor/OrbitControls.js']:
+        for file in ['app.js','mapping/view.js','planning/view.js','trajectory/view.js','avoidance/view.js','vendor/three.module.min.js','vendor/three.core.min.js','vendor/OrbitControls.js']:
             self.assertTrue((ROOT/file).is_file(),file)
     def test_planners(self):
         for name,p in D['planners'].items():
@@ -56,6 +56,7 @@ class Smoke(unittest.TestCase):
         self.assertLess(tr['snap']['constraint_error'],1e-6)
         self.assertLess(tr['jerk']['constraint_error'],1e-6)
         self.assertLess(tr['chomp'][-1]['cost'],tr['chomp'][0]['cost'])
+        self.assertLess(tr['stomp'][-1]['cost'],tr['stomp'][0]['cost'])
         for name in ['snap','jerk']:
             for derivative in ['velocity','acceleration']:
                 self.assertLess(math.dist(tr[name][derivative][0],[0,0,0]),1e-4)
@@ -71,11 +72,18 @@ class Smoke(unittest.TestCase):
                 for i,frame in enumerate(c['frames']):
                     expected=[v+c['dt']*u for v,u in zip(frame['position'],frame['control'])]
                     self.assertLess(math.dist(expected,c['actual'][i+1]),1e-4)
+        for c in av['local'].values():
+            self.assertEqual(c['actual'][0],D['start'])
+            self.assertTrue(all(collision_free(a,b,boxes) for a,b in zip(c['actual'][:-1],c['actual'][1:])))
+        ds=D['planners']['D* Lite']
+        self.assertGreater(ds['changed_edges'],0)
+        self.assertTrue(all(collision_free(a,b,boxes) for a,b in zip(ds['repair_path'][:-1],ds['repair_path'][1:])))
+        self.assertEqual(ds['repair_path'][-1],D['goal'])
         self.assertEqual(av['execution'][0],av['detection'])
         self.assertEqual(av['execution'][-1],D['goal'])
         self.assertTrue(all(collision_free(a,b,boxes) for a,b in zip(av['execution'][:-1],av['execution'][1:])))
     def test_launchers(self):
-        for name in ['mapping','planning','trajectory','avoidance','full_demo']:
+        for name in ['mapping','planning','trajectory','avoidance']:
             with self.subTest(launcher=name):
                 with socket.socket() as sock:sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
                 proc=subprocess.Popen([str(ROOT/f'run_{name}.sh'),'--no-browser','--port',str(port)],cwd='/tmp',stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)

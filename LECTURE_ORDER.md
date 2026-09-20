@@ -1,32 +1,26 @@
-# A lecture through one hangar
+# Suggested lecture order
 
-Start the lab once with `./run_full_demo.sh`. All topics remain in the same browser tab. The 3D planning views use the same solid shelving envelopes, start, goal and collision radius. The point cloud shows the original hangar, and the app labels the transition to simplified occupancy.
+Start any launcher once, then move between the four tabs. No preprocessing is needed.
 
-## Very short route · 6–8 minutes
+## Short route · 7–9 minutes
 
-1. **Mapping → Point cloud** (30 s): orbit once. “Surface samples do not tell us that unsampled space is free.”
-2. **Dense → Sparse → Octree** (60 s): identical geometry can have different storage structures. Change cell width from 1 to 0.5 m; distinguish cell count from actual occupied count.
-3. **Inflation → ESDF** (60 s): increase radius and margin until the aisle closes. Click a distance slice. “Robot size affects collision space; clearance is information we can store in that map.”
-4. **Planning → Dijkstra → A* → Theta*** (60 s): scrub each to the end, compare expansions, then compare grid and any-angle paths.
-5. **RRT* → Informed RRT*** (45 s): play at 2×. Highlight pink rewires and the ellipsoid after the first solution.
-6. **Trajectory → Path vs trajectory → Minimum snap** (60 s): show the stop at the sharp corner, then inspect the timed derivatives and discuss why collision checks are still needed. Smoothness and safety are separate requirements.
-7. **Avoidance → MPPI** (45 s): purple global route, candidate rollouts, green prediction, white actual motion. Step once: only the first command executes.
-8. **Complete pipeline** (42 s at 2×): narrate the connections while the sequence plays through arrival.
+1. **Point cloud → Dense → Sparse** (1 min). Show 10 cm cells and the active memory estimates. Sparse stores fewer cells but pays indexing overhead; switch to 50 cm to see how the trade-off changes.
+2. **Octree → Mesh → Elevation map** (1 min). Depth controls hierarchical resolution. Meshes store surfaces; a single-height map cannot retain all the free space under shelves.
+3. **Inflation** (1 min). Select grid mode, increase robot radius, and count extra layers. Switch to octree: differently sized leaves prevent a single universal layer count.
+4. **Occupancy → Costmap → ESDF** (1 min). Click one free cell beside a rack and retain it across all three views: “free”, “expensive”, and “0.6 metres away” answer different questions. No paths are involved.
+5. **A* → Theta* → Comparison** (1 min). Both use 26 neighbours. Toggle routes individually in Comparison; discuss ancestor connections separately from graph connectivity.
+6. **PRM → D* Lite** (1 min). A reusable roadmap versus reuse of search state after an obstacle update.
+7. **Pruning → STOMP** (1 min). Accepted/rejected shortcuts, then weighted noisy improvements.
+8. **Potential field → DWA → MPPI** (1–2 min). Same obstacles, different decisions. Explain direct-goal versus detour-guided control before discussing success/failure.
 
 ## Longer route · 18–22 minutes
 
-1. **PCD and bounded crop** (1 min): introduce the real asset and the simplified conservative shelving model.
-2. **Dense / sparse / blocks / octree** (3 min): storage, allocation overhead, rolling local region, eight children per split. Sparse does not automatically mean lower memory.
-3. **Occupancy / inflation / cost / ESDF** (3 min): distinguish stored information from its data structure. Show the aisle-width readout and probe clearance at different altitudes.
-4. **Dijkstra / A* / weighted A* / Theta*** (2 min): same graph and collision model, different priorities and parent connections.
-5. **RRT / RRT* / Informed RRT* / comparison** (3 min): feasible route versus improving route; sampling focus after an incumbent solution. Mention that preparation timings are scene-specific.
-6. **Pruning / random shortcutting / spline** (2 min): pause on a rejected shortcut, then show a smooth curve cutting a forbidden region.
-7. **Path versus trajectory / minimum snap / CHOMP** (3 min): timestamps and derivatives; unconstrained polynomial smoothing versus distance-driven geometry optimization. Watch the CHOMP objective decrease.
-8. **Replanning / potential-field failure / MPC / MPPI** (3 min): a controller is not mandatory for avoidance. Explain the cached detour-guided, single-integrator model. Compare prediction horizons and step the receding horizon.
-9. **Full pipeline** (84 s at 1×): consolidate the concepts.
+- Spend 4 minutes on geometry/storage: PCD, dense/hash memory, blocks, octree depths 1–6, meshes and elevation limits.
+- Spend 3 minutes on obstacle-only inflation and the shared occupancy/cost/distance probe.
+- Spend 5 minutes on Dijkstra/A*/weighted A*/Theta*, RRT rewiring/informed sampling, PRM construction and D* Lite repairs. Use comparison checkboxes to isolate pairs.
+- Spend 4 minutes on pruning, spline collision, minimum snap/jerk, CHOMP gradients and STOMP perturbations. The processing baseline is deliberately stepped 6-neighbour A*, while the planner comparison uses 26.
+- Spend 4–6 minutes on fresh versus incremental replanning, potential-field outcomes in the rack scene, Bug2 boundary following, VFH's fixed-altitude limitation, 3D DWA and receding-horizon MPC/MPPI.
 
-## Before students arrive
+There is no Complete pipeline section or Path vs trajectory vignette. Use the four tabs to connect the concepts verbally.
 
-Open the application once in the presentation browser. Confirm orbit and zoom work, select fullscreen, and set the desired playback speed. All assets are local; regeneration is not needed. Keep the CLI server running throughout the lecture. Camera reset is **C**, demo reset is **R**, pause is **Space**, and **1–5** switch topics when form controls are not focused.
-
-The unknown obstacle is a newly detected stationary suspended load. The full pipeline uses A* repair plus validated stop-to-stop motion. The separate spline demonstration shows an actual collision; the minimum-snap demonstration reports the clearance of its unconstrained smoothness optimum; do not describe it as a certified executable flight trajectory.
+Before the lecture, check orbit/zoom in the presentation browser, enter fullscreen and choose playback speed. Keep the local server running. R resets the current demo, C resets the camera, Space pauses and 1–4 select topics when form controls are not focused.

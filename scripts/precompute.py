@@ -68,11 +68,9 @@ def main():
     reduced=cloud[np.sort(idx)].astype('<f4');reduced.tofile(ROOT/'assets/hangar-points.bin')
     dump(ROOT/'assets/provenance.json',dict(source=str(source.relative_to(src)),sha256=hashlib.sha256(source.read_bytes()).hexdigest(),original_points=len(cloud),display_points=len(reduced),downsample_m=.16,bounds=[cloud.min(0),cloud.max(0)],shelves='models/fei_lrs_racks/model.sdf',world='worlds/fei_lrs_gazebo.world',uav='Simplified procedural quadrotor marker; source mesh inspected, not redistributed.'))
     data=dict(version=1,start=START,goal=GOAL,bounds=BOUNDS,boxes=BOXES,radius=RADIUS,planners={})
-    for name in ['Dijkstra','A*','Theta*','Weighted A*']:
-        data['planners'][name]=graph_search(name,2.5 if name=='Weighted A*' else 1);print(name,data['planners'][name]['nodes'],flush=True)
     for name in ['RRT','RRT*','Informed RRT*']:
         data['planners'][name]=sampling(name);print(name,data['planners'][name]['nodes'],flush=True)
-    raw=data['planners']['A*']['path'];pruned,events=prune(raw)
+    raw=graph_search(connectivity=6)['path'];pruned,events=prune(raw)
     # Minimum snap is unconstrained geometrically: collision status is preserved and shown.
     snap=minimum_derivative(pruned);jerk=minimum_derivative(pruned,3)
     spline=BSpline([0,0,0,0,1,1,1,1],pruned,3)(np.linspace(0,1,180))
@@ -87,7 +85,9 @@ def main():
     center=resample(pruned,21)[7];dynamic=np.array([center-[.65,.65,.65],center+[.65,.65,.65]])
     extra=np.concatenate((BOXES,[dynamic]));repair=graph_search(boxes=extra)
     detour,_events=prune_with_boxes(repair['path'],extra)
-    data['avoidance']=dict(obstacle=dynamic,replan=repair,detour=detour,controllers={str(h):controllers(pruned,detour,extra,h) for h in [6,12,18]})
+    # Keep the validated, generously spaced controller guide independent of comparison connectivity.
+    controller_detour,_=prune_with_boxes(graph_search(boxes=extra,connectivity=6)['path'],extra)
+    data['avoidance']=dict(obstacle=dynamic,replan=repair,detour=detour,controller_guide=controller_detour,controllers={str(h):controllers(pruned,controller_detour,extra,h) for h in [6,12,18]})
     detection=pruned[0]+.2*(pruned[1]-pruned[0]);repair_local=graph_search(boxes=extra,start=detection)
     repair_local['path']=np.vstack((detection,repair_local['path']))
     repair_local['length']=length(repair_local['path'])
@@ -95,13 +95,15 @@ def main():
     data['avoidance']['detection']=detection
     data['avoidance']['local_replan']=repair_local
     data['avoidance']['local_detour']=local_detour
-    # Full pipeline flies validated piecewise minimum-snap stop-to-stop segments.
+    # Replanned execution uses validated minimum-snap stop-to-stop segments.
     # Each 7th-degree segment stays on its straight collision-free edge.
     execution=[]
     for a,b in zip(local_detour[:-1],local_detour[1:]):
         t=np.linspace(0,1,55,endpoint=False);s=35*t**4-84*t**5+70*t**6-20*t**7
         execution.extend(a+(b-a)*s[:,None])
     execution.append(local_detour[-1]);data['avoidance']['execution']=execution
+    from scripts.refresh_revision import refresh
+    data=refresh(data)
     dump(ROOT/'precomputed/lecture.json',data)
     print('Prepared',len(reduced),'points;',round((ROOT/'precomputed/lecture.json').stat().st_size/1e6,2),'MB histories')
 
