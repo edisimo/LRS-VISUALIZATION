@@ -1,8 +1,19 @@
-import {renderDstar} from '../planning/view.js';
 import {C} from '../common/scene.js';
 import {interpolate} from '../common/math.js';
 export function render(ctx){let {scene:s,data:d,mode,t,params,metric,note}=ctx;const av=d.avoidance;
- if(mode==='D* Lite replanning'){renderDstar(ctx);return;}
+ if(mode==='D* Lite replanning'){
+  const p=d.planners['D* Lite'],stage=Math.min(4,Math.floor(t*5)),detection=p.repair_path[0];
+  // The cached moving-start repair begins after the first edge of its own route.
+  s.environment(d,.5);s.path(p.path,C.initial,.025);
+  if(stage>=1){s.box(...p.obstacle,C.dynamic,.75);s.box(p.obstacle[0].map(v=>v-d.radius),p.obstacle[1].map(v=>v+d.radius),C.inflated,.3,true);}
+  if(stage>=2)s.points(p.changed,C.inflated,.08);
+  if(stage===2)s.points(p.repair_visited.slice(0,Math.floor((t*5-2)*p.repair_visited.length)),C.frontier,.11);
+  if(stage>=3)s.path(p.repair_path,C.path);
+  s.drone(stage===0?interpolate(p.path.slice(0,2),t*5):stage<4?detection:interpolate(p.repair_path,(t-.8)*5));
+  metric('Map update',['Following global route','New obstacle detected','D* Lite repairing updated map','Replacement route ready','Execute repaired route'][stage]);
+  metric('Repair compute',Math.round(p.repair_ms)+' ms');metric('Repair expansions',p.repair_visited.length);metric('Changed edges',p.changed_edges);metric('Finite g after repair',p.retained);
+  note('Incremental D* Lite · UAV waits at detection point while persistent g/rhs and moving-start offset km repair the route · orange = changed-edge endpoints; yellow = repair expansions');return;
+ }
  if(av.local?.[mode]){
   let c=av.local[mode],i=Math.min(c.frames.length-1,Math.floor(t*c.frames.length)),f=c.frames[i];s.environment(d,.5);s.box(...av.obstacle,C.dynamic,.7);s.path(d.trajectory.pruned,C.initial,.018);s.path(c.actual.slice(0,t===1?c.actual.length:i+1),'white',.025);const current=t===1?c.actual.at(-1):f.position;s.drone(current);
   if(mode==='Potential field'){for(let [v,color] of [[f.attraction,C.path],[f.repulsion,C.dynamic],[f.escape,C.initial],[f.control,C.frontier]]){s.path([f.position,f.position.map((x,k)=>x+v[k])],color,.04);}}

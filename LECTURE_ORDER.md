@@ -9,7 +9,7 @@ Start any launcher once, then move between the four tabs. No preprocessing is ne
 3. **Inflation** (1 min). Show whole-volume inflation first, then select a slice, increase robot radius, and count extra layers. Switch to octree: differently sized leaves prevent a single universal layer count.
 4. **Occupancy → Costmap → ESDF** (1 min). Click one free cell beside a rack and retain it across all three views: “free”, “expensive”, and “0.6 metres away” answer different questions. No paths are involved.
 5. **A* → Theta* → Comparison** (1 min). Both use 26 neighbours. Toggle routes individually in Comparison; discuss ancestor connections separately from graph connectivity.
-6. **PRM → D* Lite** (1 min). A reusable roadmap versus reuse of search state after an obstacle update.
+6. **PRM → D* Lite** (1 min). A reusable roadmap versus an initial backward search. Show reuse of search state after an obstacle update in Local avoidance.
 7. **Pruning → STOMP** (1 min). Accepted/rejected shortcuts, then weighted noisy improvements.
 8. **Potential field → DWA → MPPI** (1–2 min). Same obstacles, different decisions. Watch the revised methods reach the goal with vertical motion. Explain original-route local tracking versus MPC/MPPI detour guidance.
 

@@ -1,10 +1,7 @@
 import {comparisonNames} from '../common/catalog.js';
-import {interpolate} from '../common/math.js';
 import {C} from '../common/scene.js';
 const colors=['#d9bbff','#5ee5c0','#f6c572','#85baff','#ffa694','#c2e579','#ee8fce','#4cc9f0','#ffffff'];
-export function renderDstar(ctx){let {scene:s,data:d,t,metric,note}=ctx,p=d.planners['D* Lite'];s.environment(d,.5);let phase=Math.min(3,Math.floor(t*4)),u=t*4-phase;if(phase===0){s.points(p.visited.slice(0,Math.floor(u*p.visited.length)),C.visited,.09);s.path(p.path);}else{s.path(p.path,C.initial,.018);s.box(...p.obstacle,C.dynamic,.65);s.points(p.changed,C.inflated,.08);if(phase===1)s.points(p.repair_visited.slice(0,Math.floor(u*p.repair_visited.length)),C.frontier,.11);else s.path(p.repair_path);s.drone(phase<3?p.repair_path[0]:interpolate(p.repair_path,Math.min(1,u)));}metric('Phase',['Initial backward search','Changed edges: repair','Repaired route','Execute repair'][phase]);metric('Initial expansions',p.visited.length);metric('Repair expansions',p.repair_visited.length);metric('Changed edges',p.changed_edges);metric('Repair time',Math.round(p.repair_ms)+' ms');metric('Finite g after repair',p.retained);note('Actual D* Lite: persistent g/rhs + moving-start key offset km. Orange = changed-edge endpoints; yellow = vertices processed during repair.');}
-
-export function render(ctx){let {scene:s,data:d,mode,t,metric,note}=ctx;if(mode==='D* Lite'){renderDstar(ctx);return;}s.environment(d,.55);
+export function render(ctx){let {scene:s,data:d,mode,t,metric,note}=ctx;s.environment(d,.55);
  if(mode==='Comparison'){
   const names=comparisonNames.filter(n=>ctx.params.visible?.[n]!==false);names.forEach(n=>s.path(d.planners[n].path,colors[comparisonNames.indexOf(n)],.022));
   metric('Shared collision radius','.35 m');metric('Compared planners',names.length);ctx.table(names.map((n,i)=>{let p=d.planners[n];return {name:n,color:colors[comparisonNames.indexOf(n)],time:Math.round(p.ms)+' ms',nodes:p.nodes,length:p.length.toFixed(2)+' m',clearance:p.clearance.toFixed(2)+' m'};}));note('Cached preparation measurements · interpreted Python · fixed scene and seed · not a universal speed ranking');return;
@@ -20,5 +17,5 @@ export function render(ctx){let {scene:s,data:d,mode,t,metric,note}=ctx;if(mode=
   let best=p.best.filter(b=>b.at<=n).at(-1);if(best){s.path(best.path);metric('Best length now',best.length.toFixed(2)+' m');if(mode==='Informed RRT*')s.ellipsoid(d.start,d.goal,best.length);}
   metric('Tree vertices',points.length);metric('Rewiring events',p.events.slice(0,n).reduce((a,e)=>a+e.rewires.length,0));
  }
- note('Deterministic cached history · 3D search · exact segment tests against conservatively inflated rack boxes');
+ note(mode==='D* Lite'?'D* Lite initial backward search from goal to start · unchanged map · obstacle discovery and incremental repair are shown in Local avoidance':'Deterministic cached history · 3D search · exact segment tests against conservatively inflated rack boxes');
 }
